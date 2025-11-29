@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Bitcoin DCA & Crash-Assistent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #050505;
+      color: #f7f7f7;
+    }
+    h1, h2 {
+      color: #FFD700;
+      margin-bottom: 0.5rem;
+    }
+    .card {
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      background: #111;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+    label {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.9rem;
+    }
+    input[type="number"], input[readonly] {
+      width: 100%;
+      padding: 6px 8px;
+      margin-top: 4px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #000;
+      color: #f7f7f7;
+      font-size: 0.95rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: #FFD700;
+    }
+    button {
+      width: 100%;
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #FFD700;
+      background: #000;
+      color: #FFD700;
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    button:active {
+      background: #222;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .row > div {
+      flex: 1 1 120px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .badge-green { background: #044; color: #8f8; }
+    .badge-yellow { background: #443; color: #FFEB3B; }
+    .badge-grey { background: #333; color: #bbb; }
+    .small {
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.85rem;
+    }
+    th, td {
+      border: 1px solid #333;
+      padding: 4px 6px;
+      text-align: right;
+    }
+    th {
+      background: #151515;
+      color: #ddd;
+    }
+    td:first-child, th:first-child {
+      text-align: left;
+    }
+    .hint {
+      font-size: 0.9rem;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>₿ DCA & Crash-Assistent</h1>
+  <p class="small">
+    BTC-Preis & MAs können automatisch geladen werden. Deine Einstellungen (Budget, MA-Werte) werden im Browser gespeichert.
+  </p>
+
+  <div class="card">
+    <h2>1. Basis-Einstellungen</h2>
+    <label>Monatliches DCA-Budget (€)
+      <input type="number" id="monthlyDca" value="310" step="1">
+    </label>
+    <div class="row">
+      <div>
+        <label>Crash-/Einmal-Budget (€)
+          <input type="number" id="crashBankroll" value="0" step="50">
+        </label>
+      </div>
+      <div>
+        <label>Aktueller BTC-Preis (€) <span class="small">(per Button laden oder manuell setzen)</span>
+          <input type="number" id="currentPrice" value="0" step="100" readonly>
+        </label>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>MA200 (Tage, €)
+          <input type="number" id="ma200" value="" step="100">
+        </label>
+      </div>
+      <div>
+        <label>200WMA (Wochen, €) <span class="small">(≈ 1400-Tage-Schnitt)</span>
+          <input type="number" id="wma200" value="" step="100">
+        </label>
+      </div>
+    </div>
+    <button onclick="fetchLivePrice()">BTC-Preis laden</button>
+    <button onclick="fetchMas()">MA200 & 200WMA automatisch berechnen</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Markt-Zone</h2>
+    <div id="zoneInfo" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Limit-DCA-Plan (dieser Monat)</h2>
+    <p class="small">Standard: 40 % / 35 % / 25 % auf –3 %, –6 %, –10 % verteilt.</p>
+    <table id="limitTable">
+      <thead>
+        <tr>
+          <th>Stufe</th>
+          <th>Preis (€)</th>
+          <th>Betrag (€)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint" id="limitHint"></p>
+  </div>
+
+  <div class="card">
+    <h2>4. Crash-Plan Empfehlung</h2>
+    <p class="small">Nutzung deines Crash-Budgets abhängig von der Marktzone.</p>
+    <table id="crashTable">
+      <thead>
+        <tr>
+          <th>Crash-Level</th>
+          <th>Fallhöhe</th>
+          <th>Empf. Einsatz (€)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint" id="crashHint"></p>
+  </div>
+
+  <div class="card">
+    <h2>5. Konkrete Handlung</h2>
+    <div id="actionText" class="hint"></div>
+  </div>
+
+  <div class="card">
+    <h2>6. Order-Tracker (dieser Monat)</h2>
+    <p class="small">
+      Trage deine ausgeführten Orders ein. Wenn du Preis + Betrag eingibst, wird die BTC-Menge automatisch berechnet.
+      Die App zeigt dir die Gesamtsumme und deinen durchschnittlichen Einstiegspreis.
+    </p>
+    <table id="orderTrackerTable">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Preis (€)</th>
+          <th>Betrag (€)</th>
+          <th>BTC-Menge</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Limit –3 %</td>
+          <td><input type="number" id="price1" step="10"></td>
+          <td><input type="number" id="eur1" step="10"></td>
+          <td><input type="number" id="btc1" step="0.000001"></td>
+        </tr>
+        <tr>
+          <td>Limit –6 %</td>
+          <td><input type="number" id="price2" step="10"></td>
+          <td><input type="number" id="eur2" step="10"></td>
+          <td><input type="number" id="btc2" step="0.000001"></td>
+        </tr>
+        <tr>
+          <td>Limit –10 %</td>
+          <td><input type="number" id="price3" step="10"></td>
+          <td><input type="number" id="eur3" step="10"></td>
+          <td><input type="number" id="btc3" step="0.000001"></td>
+        </tr>
+        <tr>
+          <td>Monats-Market-Order</td>
+          <td><input type="number" id="price4" step="10"></td>
+          <td><input type="number" id="eur4" step="10"></td>
+          <td><input type="number" id="btc4" step="0.000001"></td>
+        </tr>
+      </tbody>
+    </table>
+    <button onclick="updateOrderTracker()">Order-Tracking aktualisieren</button>
+    <p class="hint" id="orderSummary"></p>
+  </div>
+
+<script>
+function formatEuro(num) {
+  if (isNaN(num)) return "-";
+  return num.toLocaleString("de-DE", {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+function formatPrice(num) {
+  if (isNaN(num)) return "-";
+  return num.toLocaleString("de-DE", {minimumFractionDigits: 0, maximumFractionDigits: 0});
+}
+
+// --- Einstellungen speichern / laden (localStorage) ---
+function saveSettings() {
+  const settings = {
+    monthlyDca: document.getElementById("monthlyDca").value,
+    crashBankroll: document.getElementById("crashBankroll").value,
+    ma200: document.getElementById("ma200").value,
+    wma200: document.getElementById("wma200").value
+  };
+  try {
+    localStorage.setItem("btcDcaSettings", JSON.stringify(settings));
+  } catch (e) {}
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem("btcDcaSettings");
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (s.monthlyDca) document.getElementById("monthlyDca").value = s.monthlyDca;
+    if (s.crashBankroll) document.getElementById("crashBankroll").value = s.crashBankroll;
+    if (s.ma200) document.getElementById("ma200").value = s.ma200;
+    if (s.wma200) document.getElementById("wma200").value = s.wma200;
+  } catch (e) {}
+}
+
+// --- BTC-Preis automatisch laden ---
+async function fetchLivePrice() {
+  const priceInput = document.getElementById("currentPrice");
+  try {
+    priceInput.value = "…";
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur");
+    const data = await res.json();
+    const price = data.bitcoin.eur;
+    priceInput.value = Math.round(price);
+  } catch (e) {
+    priceInput.value = 0;
+    alert("BTC-Preis konnte nicht geladen werden. Du kannst ihn manuell eintragen.");
+  }
+  recalculate();
+}
+
+// --- MA200 & 200WMA automatisch berechnen ---
+async function fetchMas() {
+  const ma200Input = document.getElementById("ma200");
+  const wma200Input = document.getElementById("wma200");
+  ma200Input.value = "…";
+  wma200Input.value = "…";
+
+  try {
+    const res = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=max&interval=daily");
+    const data = await res.json();
+    const prices = data.prices.map(p => p[1]); // [timestamp, price]
+
+    if (prices.length < 200) {
+      alert("Nicht genug Kursdaten für MA200.");
+      ma200Input.value = "";
+      wma200Input.value = "";
+      return;
+    }
+
+    // MA200 = Schnitt der letzten 200 Tage
+    const last200 = prices.slice(-200);
+    const ma200 = last200.reduce((a, b) => a + b, 0) / last200.length;
+
+    // 200WMA ≈ Schnitt der letzten 1400 Tage (200 Wochen * 7)
+    const daysFor200w = 1400;
+    let wma200 = null;
+    if (prices.length >= daysFor200w) {
+      const last1400 = prices.slice(-daysFor200w);
+      wma200 = last1400.reduce((a, b) => a + b, 0) / last1400.length;
+    }
+
+    ma200Input.value = Math.round(ma200);
+    if (wma200 !== null) {
+      wma200Input.value = Math.round(wma200);
+    } else {
+      wma200Input.value = "";
+    }
+
+    recalculate();
+  } catch (e) {
+    alert("MA-Berechnung fehlgeschlagen. Evtl. CoinGecko nicht erreichbar.");
+    ma200Input.value = "";
+    wma200Input.value = "";
+  }
+}
+
+// --- Hauptberechnung ---
+function recalculate() {
+  const monthlyDca = parseFloat(document.getElementById("monthlyDca").value) || 0;
+  const crashBankroll = parseFloat(document.getElementById("crashBankroll").value) || 0;
+  const price = parseFloat(document.getElementById("currentPrice").value) || 0;
+  const ma200 = parseFloat(document.getElementById("ma200").value) || 0;
+  const wma200 = parseFloat(document.getElementById("wma200").value) || 0;
+
+  saveSettings();
+
+  // 1) Markt-Zone
+  const zoneInfo = document.getElementById("zoneInfo");
+  let zoneText = "";
+  let zoneBadge = "";
+  let zone = "normal";
+
+  if (price <= 0 || ma200 <= 0 || wma200 <= 0) {
+    zoneText = "Bitte BTC-Preis, MA200 und 200WMA korrekt eintragen oder per Buttons laden.";
+    zoneBadge = "<span class='badge badge-grey'>unbekannt</span>";
+  } else {
+    if (price < wma200) {
+      zone = "deep";
+      zoneBadge = "<span class='badge badge-green'>GRÜN – historische Tiefzone (unter 200WMA)</span>";
+      zoneText = "Bitcoin liegt UNTER dem 200-Wochen-Durchschnitt. Historisch eine der stärksten Kaufzonen.";
+    } else if (price < ma200) {
+      zone = "cheap";
+      zoneBadge = "<span class='badge badge-yellow'>GÜNSTIG – unter MA200</span>";
+      zoneText = "Bitcoin liegt UNTER dem 200-Tage-Durchschnitt. Gute Zone für DCA + kleinere Crash-Käufe.";
+    } else {
+      zone = "normal";
+      zoneBadge = "<span class='badge badge-grey'>NORMAL</span>";
+      zoneText = "Bitcoin liegt ÜBER dem MA200. Normaler/bullischer Bereich.";
+    }
+  }
+  zoneInfo.innerHTML = zoneBadge + "<br>" + zoneText;
+
+  // 2) Limit-DCA
+  const tbodyLimit = document.querySelector("#limitTable tbody");
+  tbodyLimit.innerHTML = "";
+  if (price > 0 && monthlyDca > 0) {
+    const levels = [
+      { label: "-3 %", drop: 0.03, part: 0.40 },
+      { label: "-6 %", drop: 0.06, part: 0.35 },
+      { label: "-10 %", drop: 0.10, part: 0.25 }
+    ];
+    levels.forEach(l => {
+      const limitPrice = price * (1 - l.drop);
+      const amount = monthlyDca * l.part;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${l.label}</td>
+        <td>${formatPrice(limitPrice)}</td>
+        <td>${formatEuro(amount)}</td>
+      `;
+      tbodyLimit.appendChild(tr);
+    });
+    document.getElementById("limitHint").innerText =
+      "Diese Limit-Orders legst du zu Monatsbeginn an (mit Post Only). Am Monatsende kaufst du den Restbetrag als Market-Order, falls nicht alle Limits ausgelöst wurden.";
+  } else {
+    document.getElementById("limitHint").innerText =
+      "Bitte Monatsbudget und BTC-Preis eintragen, um die Limit-Orders zu berechnen.";
+  }
+
+  // 3) Crash-Plan
+  const tbodyCrash = document.querySelector("#crashTable tbody");
+  tbodyCrash.innerHTML = "";
+  const crashHint = document.getElementById("crashHint");
+
+  if (crashBankroll <= 0) {
+    crashHint.innerText = "Kein Crash-Budget hinterlegt. Wenn du ETF-Geld oder Einmalbeträge zur Seite legen möchtest, trage sie oben ein.";
+  } else {
+    let factors;
+    if (zone === "deep") {
+      factors = [
+        { label: "−20 %", part: 0.15 },
+        { label: "−30 %", part: 0.20 },
+        { label: "−40 %", part: 0.25 },
+        { label: "−50 %", part: 0.40 }
+      ];
+    } else {
+      factors = [
+        { label: "−20 %", part: 0.10 },
+        { label: "−30 %", part: 0.20 },
+        { label: "−40 %", part: 0.30 },
+        { label: "−50 %", part: 0.40 }
+      ];
+    }
+    factors.forEach(f => {
+      const amount = crashBankroll * f.part;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${f.label}</td>
+        <td>vom letzten Hoch</td>
+        <td>${formatEuro(amount)}</td>
+      `;
+      tbodyCrash.appendChild(tr);
+    });
+
+    crashHint.innerText =
+      "Diese Beträge sind Richtwerte, wie du dein Crash-Budget auf verschiedene Rücksetzer verteilen kannst.";
+  }
+
+  // 4) Handlungstext
+  const actionEl = document.getElementById("actionText");
+  let action = "";
+
+  if (price <= 0) {
+    action = "Bitte zuerst BTC-Preis laden (Button) oder manuell eintragen, dann MA200 & 200WMA setzen.";
+  } else if (zone === "normal") {
+    action = "⚪ Zone: NORMAL\n\n" +
+      "• Limit-Orders wie berechnet bei −3 %, −6 %, −10 % setzen.\n" +
+      "• Crash-Budget eher trocken halten.\n" +
+      "• Am Monatsende Restbetrag als Market-Order kaufen.";
+  } else if (zone === "cheap") {
+    action = "🟡 Zone: GÜNSTIG (unter MA200)\n\n" +
+      "• DCA normal weiter mit Limit-Orders.\n" +
+      "• Kleine Zusatzkäufe (50–200 €) bei Drops ok.\n" +
+      "• Großes Crash-Budget nur teilweise nutzen.";
+  } else if (zone === "deep") {
+    action = "🟢 Zone: HISTORISCH GÜNSTIG (unter 200WMA)\n\n" +
+      "• DCA läuft weiter.\n" +
+      "• Sehr starke langfristige Kaufzone.\n" +
+      "• Crash-Budget nach Crash-Plan einsetzen, wenn du dich damit wohlfühlst.";
+  } else {
+    action = "Keine klare Zone erkannt. Prüfe BTC-Preis, MA200 und 200WMA.";
+  }
+  actionEl.innerText = action;
+}
+
+// --- Order-Tracker: BTC automatisch berechnen + Zusammenfassung ---
+function autoFillBtc() {
+  for (let i = 1; i <= 4; i++) {
+    const priceEl = document.getElementById("price" + i);
+    const eurEl = document.getElementById("eur" + i);
+    const btcEl = document.getElementById("btc" + i);
+    const price = parseFloat(priceEl.value);
+    const eur = parseFloat(eurEl.value);
+    const btc = parseFloat(btcEl.value);
+
+    if (!isNaN(price) && price > 0 && !isNaN(eur) && eur > 0 && (isNaN(btc) || btc === 0)) {
+      btcEl.value = (eur / price).toFixed(6);
+    }
+  }
+}
+
+function updateOrderTracker() {
+  autoFillBtc();
+
+  let totalEur = 0;
+  let totalBtc = 0;
+
+  for (let i = 1; i <= 4; i++) {
+    const eur = parseFloat(document.getElementById("eur" + i).value) || 0;
+    const btc = parseFloat(document.getElementById("btc" + i).value) || 0;
+    if (eur > 0 && btc > 0) {
+      totalEur += eur;
+      totalBtc += btc;
+    }
+  }
+
+  const summary = document.getElementById("orderSummary");
+  if (totalEur === 0 || totalBtc === 0) {
+    summary.innerText = "Noch keine vollständigen Daten eingetragen. Trage Betrag + BTC-Menge (oder Preis + Betrag) für ausgeführte Orders ein.";
+  } else {
+    const avgPrice = totalEur / totalBtc;
+    summary.innerText =
+      "Gesamt investiert (dieser Monat): " + formatEuro(totalEur) + " €\n" +
+      "Gesamt gekaufte BTC: " + totalBtc.toFixed(6) + " BTC\n" +
+      "Durchschnittlicher Einstiegspreis: " + formatPrice(avgPrice) + " € pro BTC";
+  }
+}
+
+// --- Events verbinden ---
+window.addEventListener("load", () => {
+  loadSettings();
+  recalculate();
+
+  ["monthlyDca","crashBankroll","ma200","wma200"].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener("input", recalculate);
+  });
+
+  for (let i = 1; i <= 4; i++) {
+    ["price","eur","btc"].forEach(prefix => {
+      const el = document.getElementById(prefix + i);
+      el.addEventListener("input", updateOrderTracker);
+    });
+  }
+});
+</script>
+</body>
+</html>
