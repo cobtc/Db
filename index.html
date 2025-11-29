@@ -272,12 +272,13 @@ async function fetchLivePrice() {
   try {
     priceInput.value = "…";
     const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur");
+    if (!res.ok) throw new Error("HTTP " + res.status);
     const data = await res.json();
     const price = data.bitcoin.eur;
     priceInput.value = Math.round(price);
   } catch (e) {
     priceInput.value = 0;
-    alert("BTC-Preis konnte nicht geladen werden. Du kannst ihn manuell eintragen.");
+    alert("BTC-Preis konnte nicht geladen werden:\n" + e.message + "\nDu kannst ihn manuell eintragen.");
   }
   recalculate();
 }
@@ -290,22 +291,30 @@ async function fetchMas() {
   wma200Input.value = "…";
 
   try {
-    const res = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=max&interval=daily");
+    // 1500 Tage reichen für ~1400-Tage-Schnitt
+    const res = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=1500&interval=daily");
+    if (!res.ok) {
+      throw new Error("HTTP-Status " + res.status);
+    }
+
     const data = await res.json();
-    const prices = data.prices.map(p => p[1]); // [timestamp, price]
+    if (!data.prices || !Array.isArray(data.prices)) {
+      throw new Error("Kein gültiges prices-Array in der Antwort.");
+    }
+
+    const prices = data.prices
+      .map(p => p[1])
+      .filter(p => typeof p === "number" && !isNaN(p));
 
     if (prices.length < 200) {
-      alert("Nicht genug Kursdaten für MA200.");
-      ma200Input.value = "";
-      wma200Input.value = "";
-      return;
+      throw new Error("Zu wenig Daten: nur " + prices.length + " Tage verfügbar.");
     }
 
     // MA200 = Schnitt der letzten 200 Tage
     const last200 = prices.slice(-200);
     const ma200 = last200.reduce((a, b) => a + b, 0) / last200.length;
 
-    // 200WMA ≈ Schnitt der letzten 1400 Tage (200 Wochen * 7)
+    // 200WMA ≈ Schnitt der letzten 1400 Tage
     const daysFor200w = 1400;
     let wma200 = null;
     if (prices.length >= daysFor200w) {
@@ -322,9 +331,9 @@ async function fetchMas() {
 
     recalculate();
   } catch (e) {
-    alert("MA-Berechnung fehlgeschlagen. Evtl. CoinGecko nicht erreichbar.");
     ma200Input.value = "";
     wma200Input.value = "";
+    alert("MA-Berechnung fehlgeschlagen:\n" + e.message);
   }
 }
 
