@@ -107,10 +107,11 @@
 <body>
   <h1>₿ DCA & Crash-Assistent</h1>
   <p class="small">
-    BTC-Preis wird automatisch geladen. MA200 & 200WMA trägst du selbst ein (z.B. aus TradingView).
+    BTC-Preis wird automatisch geladen. MA200, 200WMA und das letzte Hoch trägst du selbst ein (z.B. aus TradingView).
     Deine Einstellungen werden im Browser gespeichert.
   </p>
 
+  <!-- 1. Basis-Einstellungen -->
   <div class="card">
     <h2>1. Basis-Einstellungen</h2>
     <label>Monatliches DCA-Budget (€)
@@ -140,14 +141,20 @@
         </label>
       </div>
     </div>
+    <label>Letztes Hoch (für Crash-Level, €) <span class="small">(letztes lokales Hoch, nicht zwingend ATH)</span>
+      <input type="number" id="lastHigh" value="" step="100">
+    </label>
     <button onclick="fetchLivePrice()">BTC-Preis laden</button>
   </div>
 
+  <!-- 2. Markt-Zone & Crash-Ampel -->
   <div class="card">
-    <h2>2. Markt-Zone</h2>
+    <h2>2. Markt-Zone & Crash-Ampel</h2>
     <div id="zoneInfo" class="hint"></div>
+    <div id="crashMeter" class="hint"></div>
   </div>
 
+  <!-- 3. Limit-DCA-Plan -->
   <div class="card">
     <h2>3. Limit-DCA-Plan (dieser Monat)</h2>
     <p class="small">Standard: 40 % / 35 % / 25 % auf –3 %, –6 %, –10 % verteilt.</p>
@@ -164,71 +171,37 @@
     <p class="hint" id="limitHint"></p>
   </div>
 
+  <!-- 4. Crash-Level-Rechner -->
   <div class="card">
-    <h2>4. Crash-Plan Empfehlung</h2>
-    <p class="small">Nutzung deines Crash-Budgets abhängig von der Marktzone.</p>
-    <table id="crashTable">
+    <h2>4. Crash-Level-Rechner (vom letzten Hoch)</h2>
+    <p class="small">
+      Nutzt dein Crash-Budget und das letzte Hoch, um konkrete Kauf-Level zu berechnen.
+      Die Verteilung wird je nach Markt-Zone konservativer oder aggressiver.
+    </p>
+    <table id="crashLevelsTable">
       <thead>
         <tr>
-          <th>Crash-Level</th>
+          <th>Level</th>
           <th>Fallhöhe</th>
-          <th>Empf. Einsatz (€)</th>
+          <th>Kurs (€)</th>
+          <th>Einsatz (€)</th>
         </tr>
       </thead>
-      <tbody></tbody>
+      <tbody id="crashLevelsBody"></tbody>
     </table>
-    <p class="hint" id="crashHint"></p>
+    <p class="hint" id="crashLevelsHint"></p>
   </div>
 
+  <!-- 5. Zonen-abhängiger Einsatz-Plan -->
   <div class="card">
-    <h2>5. Konkrete Handlung</h2>
+    <h2>5. Konkrete Handlung (Zonen-Plan)</h2>
     <div id="actionText" class="hint"></div>
   </div>
 
+  <!-- 6. Monats-Plan -->
   <div class="card">
-    <h2>6. Order-Tracker (dieser Monat)</h2>
-    <p class="small">
-      Trage deine ausgeführten Orders ein. Wenn du Preis + Betrag eingibst, wird die BTC-Menge automatisch berechnet.
-      Die App zeigt dir die Gesamtsumme und deinen durchschnittlichen Einstiegspreis.
-    </p>
-    <table id="orderTrackerTable">
-      <thead>
-        <tr>
-          <th>Order</th>
-          <th>Preis (€)</th>
-          <th>Betrag (€)</th>
-          <th>BTC-Menge</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Limit –3 %</td>
-          <td><input type="number" id="price1" step="10"></td>
-          <td><input type="number" id="eur1" step="10"></td>
-          <td><input type="number" id="btc1" step="0.000001"></td>
-        </tr>
-        <tr>
-          <td>Limit –6 %</td>
-          <td><input type="number" id="price2" step="10"></td>
-          <td><input type="number" id="eur2" step="10"></td>
-          <td><input type="number" id="btc2" step="0.000001"></td>
-        </tr>
-        <tr>
-          <td>Limit –10 %</td>
-          <td><input type="number" id="price3" step="10"></td>
-          <td><input type="number" id="eur3" step="10"></td>
-          <td><input type="number" id="btc3" step="0.000001"></td>
-        </tr>
-        <tr>
-          <td>Monats-Market-Order</td>
-          <td><input type="number" id="price4" step="10"></td>
-          <td><input type="number" id="eur4" step="10"></td>
-          <td><input type="number" id="btc4" step="0.000001"></td>
-        </tr>
-      </tbody>
-    </table>
-    <button onclick="updateOrderTracker()">Order-Tracking aktualisieren</button>
-    <p class="hint" id="orderSummary"></p>
+    <h2>6. Monats-Plan (Was du konkret tust)</h2>
+    <div id="monthPlanText" class="hint"></div>
   </div>
 
 <script>
@@ -247,7 +220,8 @@ function saveSettings() {
     monthlyDca: document.getElementById("monthlyDca").value,
     crashBankroll: document.getElementById("crashBankroll").value,
     ma200: document.getElementById("ma200").value,
-    wma200: document.getElementById("wma200").value
+    wma200: document.getElementById("wma200").value,
+    lastHigh: document.getElementById("lastHigh").value
   };
   try {
     localStorage.setItem("btcDcaSettings", JSON.stringify(settings));
@@ -263,6 +237,7 @@ function loadSettings() {
     if (s.crashBankroll) document.getElementById("crashBankroll").value = s.crashBankroll;
     if (s.ma200) document.getElementById("ma200").value = s.ma200;
     if (s.wma200) document.getElementById("wma200").value = s.wma200;
+    if (s.lastHigh) document.getElementById("lastHigh").value = s.lastHigh;
   } catch (e) {}
 }
 
@@ -290,11 +265,13 @@ function recalculate() {
   const price = parseFloat(document.getElementById("currentPrice").value) || 0;
   const ma200 = parseFloat(document.getElementById("ma200").value) || 0;
   const wma200 = parseFloat(document.getElementById("wma200").value) || 0;
+  const lastHigh = parseFloat(document.getElementById("lastHigh").value) || 0;
 
   saveSettings();
 
-  // Markt-Zone
+  // 1) Markt-Zone
   const zoneInfo = document.getElementById("zoneInfo");
+  const crashMeter = document.getElementById("crashMeter");
   let zoneText = "";
   let zoneBadge = "";
   let zone = "normal";
@@ -319,23 +296,53 @@ function recalculate() {
   }
   zoneInfo.innerHTML = zoneBadge + "<br>" + zoneText;
 
-  // Limit-DCA
+  // 2) Crash-Ampel (Abstand vom letzten Hoch)
+  if (lastHigh > 0 && price > 0) {
+    const dropPct = ((lastHigh - price) / lastHigh) * 100;
+    if (dropPct <= 0) {
+      crashMeter.innerText =
+        "Crash-Ampel: Aktueller Kurs liegt auf oder über deinem letzten Hoch. Noch kein Rücksetzer relativ zu diesem Hoch.";
+    } else {
+      const dropRounded = dropPct.toFixed(1);
+      let mood;
+      if (dropPct < 10) {
+        mood = "Leichter Rücksetzer – noch kein klassischer Crash.";
+      } else if (dropPct < 20) {
+        mood = "Spürbarer Rückgang – interessante DCA-Zone, aber noch vor Crash-Level 1 (−20 %).";
+      } else if (dropPct < 30) {
+        mood = "Crash-Level 1 (≈ −20 %) ist erreicht oder überschritten. Erste Crashkäufe werden relevant.";
+      } else if (dropPct < 40) {
+        mood = "Zwischen Crash-Level 2 und 3 – deutlicher Crashbereich.";
+      } else {
+        mood = "Starker Crash (über −40 % vom letzten Hoch).";
+      }
+      crashMeter.innerText =
+        "Crash-Ampel: Wir sind ca. " + dropRounded.replace(".", ",") +
+        " % unter deinem letzten Hoch.\n" + mood;
+    }
+  } else {
+    crashMeter.innerText =
+      "Crash-Ampel: Trage ein letztes Hoch ein, um zu sehen, wie weit der Markt aktuell davon entfernt ist.";
+  }
+
+  // 3) Limit-DCA-Plan (–3 / –6 / –10)
   const tbodyLimit = document.querySelector("#limitTable tbody");
   tbodyLimit.innerHTML = "";
+  let limitLevels = [];
   if (price > 0 && monthlyDca > 0) {
-    const levels = [
+    limitLevels = [
       { label: "-3 %", drop: 0.03, part: 0.40 },
       { label: "-6 %", drop: 0.06, part: 0.35 },
       { label: "-10 %", drop: 0.10, part: 0.25 }
     ];
-    levels.forEach(l => {
-      const limitPrice = price * (1 - l.drop);
-      const amount = monthlyDca * l.part;
+    limitLevels.forEach(l => {
+      l.limitPrice = price * (1 - l.drop);
+      l.amount = monthlyDca * l.part;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${l.label}</td>
-        <td>${formatPrice(limitPrice)}</td>
-        <td>${formatEuro(amount)}</td>
+        <td>${formatPrice(l.limitPrice)}</td>
+        <td>${formatEuro(l.amount)}</td>
       `;
       tbodyLimit.appendChild(tr);
     });
@@ -346,113 +353,137 @@ function recalculate() {
       "Bitte Monatsbudget und BTC-Preis eintragen, um die Limit-Orders zu berechnen.";
   }
 
-  // Crash-Plan
-  const tbodyCrash = document.querySelector("#crashTable tbody");
-  tbodyCrash.innerHTML = "";
-  const crashHint = document.getElementById("crashHint");
+  // 4) Crash-Level-Rechner (vom letzten Hoch)
+  const tbodyCrashLevels = document.getElementById("crashLevelsBody");
+  const crashLevelsHint = document.getElementById("crashLevelsHint");
+  tbodyCrashLevels.innerHTML = "";
 
-  if (crashBankroll <= 0) {
-    crashHint.innerText = "Kein Crash-Budget hinterlegt. Wenn du ETF-Geld oder Einmalbeträge zur Seite legen möchtest, trage sie oben ein.";
+  if (crashBankroll <= 0 || lastHigh <= 0) {
+    crashLevelsHint.innerText =
+      "Für konkrete Crash-Levels trage bitte ein Crash-Budget und ein letztes Hoch ein.";
   } else {
     let factors;
     if (zone === "deep") {
+      // Aggressiver Einsatz, wenn wir schon unter 200WMA sind
       factors = [
-        { label: "−20 %", part: 0.15 },
-        { label: "−30 %", part: 0.20 },
-        { label: "−40 %", part: 0.25 },
-        { label: "−50 %", part: 0.40 }
+        { label: "Level 1", dropLabel: "−20 %", drop: 0.20, part: 0.15 },
+        { label: "Level 2", dropLabel: "−30 %", drop: 0.30, part: 0.20 },
+        { label: "Level 3", dropLabel: "−40 %", drop: 0.40, part: 0.25 },
+        { label: "Level 4", dropLabel: "−50 %", drop: 0.50, part: 0.40 }
       ];
     } else {
+      // Defensivere Standardverteilung
       factors = [
-        { label: "−20 %", part: 0.10 },
-        { label: "−30 %", part: 0.20 },
-        { label: "−40 %", part: 0.30 },
-        { label: "−50 %", part: 0.40 }
+        { label: "Level 1", dropLabel: "−20 %", drop: 0.20, part: 0.10 },
+        { label: "Level 2", dropLabel: "−30 %", drop: 0.30, part: 0.20 },
+        { label: "Level 3", dropLabel: "−40 %", drop: 0.40, part: 0.30 },
+        { label: "Level 4", dropLabel: "−50 %", drop: 0.50, part: 0.40 }
       ];
     }
+
     factors.forEach(f => {
+      const levelPrice = lastHigh * (1 - f.drop);
       const amount = crashBankroll * f.part;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${f.label}</td>
-        <td>vom letzten Hoch</td>
+        <td>${f.dropLabel}</td>
+        <td>${formatPrice(levelPrice)}</td>
         <td>${formatEuro(amount)}</td>
       `;
-      tbodyCrash.appendChild(tr);
+      tbodyCrashLevels.appendChild(tr);
     });
 
-    crashHint.innerText =
-      "Diese Beträge sind Richtwerte, wie du dein Crash-Budget auf verschiedene Rücksetzer verteilen kannst.";
+    crashLevelsHint.innerText =
+      "Diese Tabelle zeigt dir, bei welchen Kursen (vom letzten Hoch aus) du wie viel von deinem Crash-Budget einplanen kannst.";
   }
 
-  // Handlungstext
+  // 5) Zonen-abhängiger Einsatz-Plan (Konkrete Handlung)
   const actionEl = document.getElementById("actionText");
   let action = "";
 
   if (price <= 0) {
-    action = "Bitte zuerst BTC-Preis laden (Button) oder manuell eintragen, dann MA200 & 200WMA setzen.";
+    action = "Bitte zuerst BTC-Preis laden (Button) oder manuell eintragen, dann MA200, 200WMA und letztes Hoch setzen.";
   } else if (zone === "normal") {
-    action = "⚪ Zone: NORMAL\n\n" +
-      "• Limit-Orders wie berechnet bei −3 %, −6 %, −10 % setzen.\n" +
-      "• Crash-Budget eher trocken halten.\n" +
-      "• Am Monatsende Restbetrag als Market-Order kaufen.";
+    action =
+      "⚪ Zone: NORMAL\n\n" +
+      "• DCA: Nutze dein Monatsbudget mit der 3er-Limitstaffel (−3 %, −6 %, −10 %).\n" +
+      "• Crash-Budget: Nur beobachten, nicht aggressiv einsetzen.\n" +
+      "• Fokus: Langfristig weiterkaufen, ohne dich von kleineren Schwankungen verrückt machen zu lassen.";
   } else if (zone === "cheap") {
-    action = "🟡 Zone: GÜNSTIG (unter MA200)\n\n" +
-      "• DCA normal weiter mit Limit-Orders.\n" +
-      "• Kleine Zusatzkäufe (50–200 €) bei Drops ok.\n" +
-      "• Großes Crash-Budget nur teilweise nutzen.";
+    action =
+      "🟡 Zone: GÜNSTIG (unter MA200)\n\n" +
+      "• DCA: Monats-Limits normal setzen.\n" +
+      "• Crash-Budget: Kleine Teilbeträge kannst du bei tieferen Rücksetzern nutzen (siehe Crash-Level-Tabelle).\n" +
+      "• Fokus: Ruhig bleiben, Setup weiterfahren, nicht das gesamte Crash-Budget zu früh verbraten.";
   } else if (zone === "deep") {
-    action = "🟢 Zone: HISTORISCH GÜNSTIG (unter 200WMA)\n\n" +
-      "• DCA läuft weiter.\n" +
-      "• Sehr starke langfristige Kaufzone.\n" +
-      "• Crash-Budget nach Crash-Plan einsetzen, wenn du dich damit wohlfühlst.";
+    action =
+      "🟢 Zone: HISTORISCH GÜNSTIG (unter 200WMA)\n\n" +
+      "• DCA: Monatsbudget weiter mit Limits nutzen.\n" +
+      "• Crash-Budget: Je nach Gefühl kannst du die in der Tabelle vorgeschlagenen Level (−20 % bis −50 %) ernsthaft bespielen.\n" +
+      "• Fokus: Langfristig beste Zonen, aber trotzdem gestaffelt vorgehen – nie alles auf einmal.";
   } else {
     action = "Keine klare Zone erkannt. Prüfe BTC-Preis, MA200 und 200WMA.";
   }
   actionEl.innerText = action;
-}
 
-// Order-Tracker
-function autoFillBtc() {
-  for (let i = 1; i <= 4; i++) {
-    const priceEl = document.getElementById("price" + i);
-    const eurEl = document.getElementById("eur" + i);
-    const btcEl = document.getElementById("btc" + i);
-    const price = parseFloat(priceEl.value);
-    const eur = parseFloat(eurEl.value);
-    const btc = parseFloat(btcEl.value);
+  // 6) Monats-Plan Text
+  const monthPlanEl = document.getElementById("monthPlanText");
+  let monthPlan = "";
 
-    if (!isNaN(price) && price > 0 && !isNaN(eur) && eur > 0 && (isNaN(btc) || btc === 0)) {
-      btcEl.value = (eur / price).toFixed(6);
-    }
-  }
-}
-
-function updateOrderTracker() {
-  autoFillBtc();
-
-  let totalEur = 0;
-  let totalBtc = 0;
-
-  for (let i = 1; i <= 4; i++) {
-    const eur = parseFloat(document.getElementById("eur" + i).value) || 0;
-    const btc = parseFloat(document.getElementById("btc" + i).value) || 0;
-    if (eur > 0 && btc > 0) {
-      totalEur += eur;
-      totalBtc += btc;
-    }
-  }
-
-  const summary = document.getElementById("orderSummary");
-  if (totalEur === 0 || totalBtc === 0) {
-    summary.innerText = "Noch keine vollständigen Daten eingetragen. Trage Betrag + BTC-Menge (oder Preis + Betrag) für ausgeführte Orders ein.";
+  if (price <= 0 || monthlyDca <= 0) {
+    monthPlan =
+      "Monats-Plan kann noch nicht berechnet werden.\n" +
+      "Trage mindestens BTC-Preis und dein Monatsbudget ein.";
   } else {
-    const avgPrice = totalEur / totalBtc;
-    summary.innerText =
-      "Gesamt investiert (dieser Monat): " + formatEuro(totalEur) + " €\n" +
-      "Gesamt gekaufte BTC: " + totalBtc.toFixed(6) + " BTC\n" +
-      "Durchschnittlicher Einstiegspreis: " + formatPrice(avgPrice) + " € pro BTC";
+    const totalLimitAmount = limitLevels.reduce((sum, l) => sum + (l.amount || 0), 0);
+    const rest = monthlyDca - totalLimitAmount;
+    const restRounded = Math.max(0, Math.round(rest));
+
+    monthPlan = "Zu Monatsbeginn:\n";
+
+    if (limitLevels.length === 3) {
+      monthPlan +=
+        "• Lege 3 Limit-Orders an:\n" +
+        "  - " + limitLevels[0].label + ": ca. " + formatPrice(limitLevels[0].limitPrice) + " € mit " + formatEuro(limitLevels[0].amount) + " €\n" +
+        "  - " + limitLevels[1].label + ": ca. " + formatPrice(limitLevels[1].limitPrice) + " € mit " + formatEuro(limitLevels[1].amount) + " €\n" +
+        "  - " + limitLevels[2].label + ": ca. " + formatPrice(limitLevels[2].limitPrice) + " € mit " + formatEuro(limitLevels[2].amount) + " €\n";
+    } else {
+      monthPlan += "• Limit-Staffel konnte nicht berechnet werden. Prüfe BTC-Preis und Budget.\n";
+    }
+
+    monthPlan += "\nAm Monatsende:\n";
+    if (restRounded > 0) {
+      monthPlan +=
+        "• Prüfe, wie viele Limits ausgelöst wurden.\n" +
+        "• Den Restbetrag (~" + formatEuro(restRounded) + " €) kannst du als Market-Order nachkaufen.\n";
+    } else {
+      monthPlan +=
+        "• Falls alle Limits ausgelöst wurden, musst du nichts weiter tun.\n";
+    }
+
+    monthPlan += "\nCrash-Budget:\n";
+    if (crashBankroll <= 0) {
+      monthPlan +=
+        "• Aktuell kein Crash-Budget hinterlegt. Wenn du extra Geld (z.B. aus ETF-Verkauf) zur Seite legen möchtest, trage es oben ein.\n";
+    } else {
+      if (zone === "normal") {
+        monthPlan +=
+          "• Halte dein Crash-Budget trocken. Nur bei wirklich deutlichen Rücksetzern (siehe Crash-Levels) langsam einsetzen.\n";
+      } else if (zone === "cheap") {
+        monthPlan +=
+          "• Du kannst erste kleine Positionen gemäß Crash-Level-Tabelle nutzen, aber nicht alles auf einmal.\n";
+      } else if (zone === "deep") {
+        monthPlan +=
+          "• In dieser Zone ist dein Crash-Budget besonders wertvoll. Nutze die Tabelle, um gestaffelt bei −20 %, −30 %, −40 %, −50 % zuzukaufen.\n";
+      } else {
+        monthPlan +=
+          "• Zone unklar. Nutze Crash-Budget nur sehr vorsichtig oder warte auf klarere Signale.\n";
+      }
+    }
   }
+
+  monthPlanEl.innerText = monthPlan;
 }
 
 // Events
@@ -460,17 +491,10 @@ window.addEventListener("load", () => {
   loadSettings();
   recalculate();
 
-  ["monthlyDca","crashBankroll","ma200","wma200"].forEach(id => {
+  ["monthlyDca","crashBankroll","ma200","wma200","lastHigh"].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener("input", recalculate);
   });
-
-  for (let i = 1; i <= 4; i++) {
-    ["price","eur","btc"].forEach(prefix => {
-      const el = document.getElementById(prefix + i);
-      el.addEventListener("input", updateOrderTracker);
-    });
-  }
 });
 </script>
 </body>
