@@ -107,7 +107,8 @@
 <body>
   <h1>₿ DCA & Crash-Assistent</h1>
   <p class="small">
-    BTC-Preis & MAs können automatisch geladen werden. Deine Einstellungen (Budget, MA-Werte) werden im Browser gespeichert.
+    BTC-Preis wird automatisch geladen. MA200 & 200WMA trägst du selbst ein (z.B. aus TradingView).
+    Deine Einstellungen werden im Browser gespeichert.
   </p>
 
   <div class="card">
@@ -134,13 +135,12 @@
         </label>
       </div>
       <div>
-        <label>200WMA (Wochen, €) <span class="small">(≈ 1400-Tage-Schnitt)</span>
+        <label>200WMA (Wochen, €)
           <input type="number" id="wma200" value="" step="100">
         </label>
       </div>
     </div>
     <button onclick="fetchLivePrice()">BTC-Preis laden</button>
-    <button onclick="fetchMas()">MA200 & 200WMA automatisch berechnen</button>
   </div>
 
   <div class="card">
@@ -241,7 +241,7 @@ function formatPrice(num) {
   return num.toLocaleString("de-DE", {minimumFractionDigits: 0, maximumFractionDigits: 0});
 }
 
-// --- Einstellungen speichern / laden (localStorage) ---
+// Einstellungen speichern / laden
 function saveSettings() {
   const settings = {
     monthlyDca: document.getElementById("monthlyDca").value,
@@ -266,7 +266,7 @@ function loadSettings() {
   } catch (e) {}
 }
 
-// --- BTC-Preis automatisch laden ---
+// BTC-Preis laden
 async function fetchLivePrice() {
   const priceInput = document.getElementById("currentPrice");
   try {
@@ -283,61 +283,7 @@ async function fetchLivePrice() {
   recalculate();
 }
 
-// --- MA200 & 200WMA automatisch berechnen ---
-async function fetchMas() {
-  const ma200Input = document.getElementById("ma200");
-  const wma200Input = document.getElementById("wma200");
-  ma200Input.value = "…";
-  wma200Input.value = "…";
-
-  try {
-    // 1500 Tage reichen für ~1400-Tage-Schnitt
-    const res = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=1500&interval=daily");
-    if (!res.ok) {
-      throw new Error("HTTP-Status " + res.status);
-    }
-
-    const data = await res.json();
-    if (!data.prices || !Array.isArray(data.prices)) {
-      throw new Error("Kein gültiges prices-Array in der Antwort.");
-    }
-
-    const prices = data.prices
-      .map(p => p[1])
-      .filter(p => typeof p === "number" && !isNaN(p));
-
-    if (prices.length < 200) {
-      throw new Error("Zu wenig Daten: nur " + prices.length + " Tage verfügbar.");
-    }
-
-    // MA200 = Schnitt der letzten 200 Tage
-    const last200 = prices.slice(-200);
-    const ma200 = last200.reduce((a, b) => a + b, 0) / last200.length;
-
-    // 200WMA ≈ Schnitt der letzten 1400 Tage
-    const daysFor200w = 1400;
-    let wma200 = null;
-    if (prices.length >= daysFor200w) {
-      const last1400 = prices.slice(-daysFor200w);
-      wma200 = last1400.reduce((a, b) => a + b, 0) / last1400.length;
-    }
-
-    ma200Input.value = Math.round(ma200);
-    if (wma200 !== null) {
-      wma200Input.value = Math.round(wma200);
-    } else {
-      wma200Input.value = "";
-    }
-
-    recalculate();
-  } catch (e) {
-    ma200Input.value = "";
-    wma200Input.value = "";
-    alert("MA-Berechnung fehlgeschlagen:\n" + e.message);
-  }
-}
-
-// --- Hauptberechnung ---
+// Hauptlogik
 function recalculate() {
   const monthlyDca = parseFloat(document.getElementById("monthlyDca").value) || 0;
   const crashBankroll = parseFloat(document.getElementById("crashBankroll").value) || 0;
@@ -347,14 +293,14 @@ function recalculate() {
 
   saveSettings();
 
-  // 1) Markt-Zone
+  // Markt-Zone
   const zoneInfo = document.getElementById("zoneInfo");
   let zoneText = "";
   let zoneBadge = "";
   let zone = "normal";
 
   if (price <= 0 || ma200 <= 0 || wma200 <= 0) {
-    zoneText = "Bitte BTC-Preis, MA200 und 200WMA korrekt eintragen oder per Buttons laden.";
+    zoneText = "Bitte BTC-Preis, MA200 und 200WMA eintragen. MA-Werte kannst du z.B. aus TradingView holen.";
     zoneBadge = "<span class='badge badge-grey'>unbekannt</span>";
   } else {
     if (price < wma200) {
@@ -373,7 +319,7 @@ function recalculate() {
   }
   zoneInfo.innerHTML = zoneBadge + "<br>" + zoneText;
 
-  // 2) Limit-DCA
+  // Limit-DCA
   const tbodyLimit = document.querySelector("#limitTable tbody");
   tbodyLimit.innerHTML = "";
   if (price > 0 && monthlyDca > 0) {
@@ -400,7 +346,7 @@ function recalculate() {
       "Bitte Monatsbudget und BTC-Preis eintragen, um die Limit-Orders zu berechnen.";
   }
 
-  // 3) Crash-Plan
+  // Crash-Plan
   const tbodyCrash = document.querySelector("#crashTable tbody");
   tbodyCrash.innerHTML = "";
   const crashHint = document.getElementById("crashHint");
@@ -439,7 +385,7 @@ function recalculate() {
       "Diese Beträge sind Richtwerte, wie du dein Crash-Budget auf verschiedene Rücksetzer verteilen kannst.";
   }
 
-  // 4) Handlungstext
+  // Handlungstext
   const actionEl = document.getElementById("actionText");
   let action = "";
 
@@ -466,7 +412,7 @@ function recalculate() {
   actionEl.innerText = action;
 }
 
-// --- Order-Tracker: BTC automatisch berechnen + Zusammenfassung ---
+// Order-Tracker
 function autoFillBtc() {
   for (let i = 1; i <= 4; i++) {
     const priceEl = document.getElementById("price" + i);
@@ -509,7 +455,7 @@ function updateOrderTracker() {
   }
 }
 
-// --- Events verbinden ---
+// Events
 window.addEventListener("load", () => {
   loadSettings();
   recalculate();
