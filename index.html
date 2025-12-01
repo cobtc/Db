@@ -184,7 +184,7 @@
 <body>
   <h1>₿ DCA & Crash-Assistent PRO</h1>
   <div class="subtitle">
-    Version 1.1 – DVCB-Strategie, Zonenlogik & Crash-Budget-Helfer. Daten bleiben im Browser gespeichert.
+    Version 1.2 – DVCB-Strategie, Zonenlogik, Crash-Budget-Helfer & optionale CPR/Pivot-Feinsteuerung.
   </div>
 
   <!-- 1. Basis-Einstellungen -->
@@ -237,7 +237,7 @@
     <h2>3. DCA-Limit-Plan (dieser Monat)</h2>
     <p class="small">
       Standard-Limits: −3 %, −6 %, −10 %. In der Deep-Zone kommt ein Extra-Limit bei −15 % dazu
-      (alle Limits gestaffelt nach Zone).
+      (alle Limits gestaffelt nach Zone und optional feinjustiert durch CPR/Pivots).
     </p>
     <table id="limitTable">
       <thead>
@@ -257,7 +257,7 @@
     <h2>4. Crash-Level (vom aktuellen Preis)</h2>
     <p class="small">
       Crash-Budget wird auf −20 %, −30 %, −40 %, −50 % vom aktuellen Preis verteilt.
-      Die Verteilung wird je nach Zone konservativer oder aggressiver.
+      Die Verteilung wird je nach Zone konservativer oder aggressiver – und kann zusätzlich vom CPR-Bias beeinflusst werden.
     </p>
     <table id="crashTable">
       <thead>
@@ -302,6 +302,67 @@
     <div id="assistantText" class="hint muted"></div>
   </div>
 
+  <!-- 8. CPR/Pivot-Analyse (optional) -->
+  <div class="card">
+    <h2>8. CPR & Pivot-Feinsteuerung (optional)</h2>
+    <p class="small">
+      Trage die CPR- und Pivot-Levels (z.B. aus einem CPR-Indikator in TradingView, BTC/EUR) ein.
+      Wenn Werte gesetzt sind, nutzt die App den Bias (R-/S-Levels), um DCA und Crash-Verteilungen leicht zu optimieren.
+    </p>
+    <div class="row">
+      <div>
+        <label>BC (Bottom Central Pivot)
+          <input type="number" id="cprBC" step="10">
+        </label>
+      </div>
+      <div>
+        <label>PP (Pivot Point)
+          <input type="number" id="cprPP" step="10">
+        </label>
+      </div>
+      <div>
+        <label>TC (Top Central Pivot)
+          <input type="number" id="cprTC" step="10">
+        </label>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>S1
+          <input type="number" id="cprS1" step="10">
+        </label>
+      </div>
+      <div>
+        <label>S2
+          <input type="number" id="cprS2" step="10">
+        </label>
+      </div>
+      <div>
+        <label>S3
+          <input type="number" id="cprS3" step="10">
+        </label>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>R1
+          <input type="number" id="cprR1" step="10">
+        </label>
+      </div>
+      <div>
+        <label>R2
+          <input type="number" id="cprR2" step="10">
+        </label>
+      </div>
+      <div>
+        <label>R3
+          <input type="number" id="cprR3" step="10">
+        </label>
+      </div>
+    </div>
+    <p class="hint" id="cprInfo"></p>
+  </div>
+
 <script>
 function formatEuro(num) {
   if (isNaN(num)) return "-";
@@ -314,6 +375,70 @@ function formatPrice(num) {
 
 let lastRecommendedCrashBudget = null;
 
+// CPR-Kontext bestimmen
+function getCprContext(price) {
+  const bc = parseFloat(document.getElementById("cprBC").value);
+  const pp = parseFloat(document.getElementById("cprPP").value);
+  const tc = parseFloat(document.getElementById("cprTC").value);
+  const s1 = parseFloat(document.getElementById("cprS1").value);
+  const s2 = parseFloat(document.getElementById("cprS2").value);
+  const s3 = parseFloat(document.getElementById("cprS3").value);
+  const r1 = parseFloat(document.getElementById("cprR1").value);
+  const r2 = parseFloat(document.getElementById("cprR2").value);
+  const r3 = parseFloat(document.getElementById("cprR3").value);
+
+  const cprInfo = document.getElementById("cprInfo");
+  if (isNaN(bc) || isNaN(pp) || isNaN(tc) || bc <= 0 || pp <= 0 || tc <= 0) {
+    cprInfo.innerText = "CPR/Pivot ist aktuell inaktiv. Trage BC, PP und TC (und optional R/S-Level) ein, um die Feinsteuerung zu aktivieren.";
+    return {enabled:false, bias:"none", widthClass:"none", desc:""};
+  }
+
+  let widthPct = null;
+  let widthClass = "normal";
+  if (tc > bc) {
+    widthPct = ((tc - bc) / pp) * 100;
+    if (widthPct < 0.7) widthClass = "narrow";
+    else if (widthPct > 1.5) widthClass = "wide";
+    else widthClass = "normal";
+  }
+
+  let bias = "neutral";
+  if (!isNaN(price) && price > 0) {
+    if (!isNaN(s2) && price <= s2) {
+      bias = "strongDown";
+    } else if (!isNaN(s1) && price <= s1) {
+      bias = "down";
+    } else if (!isNaN(r2) && price >= r2) {
+      bias = "strongUp";
+    } else if (!isNaN(r1) && price >= r1) {
+      bias = "up";
+    } else if (!isNaN(pp)) {
+      if (price < pp) bias = "down";
+      else bias = "up";
+    }
+  }
+
+  let desc = "CPR aktiv.\n";
+  if (widthPct !== null) {
+    desc += "CPR-Breite: " + widthPct.toFixed(2) + " % (" + widthClass + ").\n";
+  }
+
+  if (bias === "strongDown") {
+    desc += "Bias: Stark abwärts orientiert (Preis eher im Bereich S2/S3 oder darunter). Tiefe Dips und Crash-Levels sind realistischer.";
+  } else if (bias === "down") {
+    desc += "Bias: Leicht abwärts (unter PP, im Bereich S1).";
+  } else if (bias === "up") {
+    desc += "Bias: Leicht aufwärts (über PP, im Bereich R1).";
+  } else if (bias === "strongUp") {
+    desc += "Bias: Stark aufwärts (im Bereich R2/R3 oder darüber). Tiefe Crash-Level werden eventuell länger nicht bedient.";
+  } else {
+    desc += "Bias: Neutral.";
+  }
+
+  cprInfo.innerText = desc;
+  return {enabled:true, bias, widthClass, desc, widthPct};
+}
+
 // Einstellungen speichern / laden
 function saveSettings() {
   const settings = {
@@ -322,7 +447,16 @@ function saveSettings() {
     ma200: document.getElementById("ma200").value,
     wma200: document.getElementById("wma200").value,
     spentThisMonth: document.getElementById("spentThisMonth").value,
-    currentPrice: document.getElementById("currentPrice").value
+    currentPrice: document.getElementById("currentPrice").value,
+    cprBC: document.getElementById("cprBC").value,
+    cprPP: document.getElementById("cprPP").value,
+    cprTC: document.getElementById("cprTC").value,
+    cprS1: document.getElementById("cprS1").value,
+    cprS2: document.getElementById("cprS2").value,
+    cprS3: document.getElementById("cprS3").value,
+    cprR1: document.getElementById("cprR1").value,
+    cprR2: document.getElementById("cprR2").value,
+    cprR3: document.getElementById("cprR3").value
   };
   try {
     localStorage.setItem("btcDcaSettingsV2", JSON.stringify(settings));
@@ -340,6 +474,15 @@ function loadSettings() {
     if (s.wma200) document.getElementById("wma200").value = s.wma200;
     if (s.spentThisMonth) document.getElementById("spentThisMonth").value = s.spentThisMonth;
     if (s.currentPrice) document.getElementById("currentPrice").value = s.currentPrice;
+    if (s.cprBC) document.getElementById("cprBC").value = s.cprBC;
+    if (s.cprPP) document.getElementById("cprPP").value = s.cprPP;
+    if (s.cprTC) document.getElementById("cprTC").value = s.cprTC;
+    if (s.cprS1) document.getElementById("cprS1").value = s.cprS1;
+    if (s.cprS2) document.getElementById("cprS2").value = s.cprS2;
+    if (s.cprS3) document.getElementById("cprS3").value = s.cprS3;
+    if (s.cprR1) document.getElementById("cprR1").value = s.cprR1;
+    if (s.cprR2) document.getElementById("cprR2").value = s.cprR2;
+    if (s.cprR3) document.getElementById("cprR3").value = s.cprR3;
   } catch (e) {}
 }
 
@@ -379,6 +522,50 @@ function applyRecommendedCrashBudget() {
   recalculate();
 }
 
+// DCA-Anteile leicht mit CPR-Bias anpassen
+function adjustDcaPartsWithCpr(dcaLevels, cpr, zone) {
+  if (!cpr.enabled) return;
+
+  if (cpr.bias === "strongDown") {
+    // etwas mehr in die tieferen Stufen schieben
+    if (dcaLevels.length === 3) {
+      // -3, -6, -10
+      dcaLevels[0].part = Math.max(0, dcaLevels[0].part - 0.05);
+      dcaLevels[2].part += 0.05;
+    } else if (dcaLevels.length === 4) {
+      // -3, -6, -10, -15
+      dcaLevels[0].part = Math.max(0, dcaLevels[0].part - 0.05);
+      dcaLevels[2].part += 0.03;
+      dcaLevels[3].part += 0.02;
+    }
+  } else if (cpr.bias === "strongUp") {
+    // etwas mehr in die oberen Stufen schieben
+    if (dcaLevels.length === 3) {
+      dcaLevels[0].part += 0.05;
+      dcaLevels[2].part = Math.max(0, dcaLevels[2].part - 0.05);
+    } else if (dcaLevels.length === 4) {
+      dcaLevels[3].part = Math.max(0, dcaLevels[3].part - 0.05);
+      dcaLevels[0].part += 0.03;
+      dcaLevels[1].part += 0.02;
+    }
+  }
+}
+
+// Crash-Anteile mit CPR-Bias anpassen
+function adjustCrashPartsWithCpr(parts, cpr) {
+  if (!cpr.enabled) return;
+
+  if (cpr.bias === "strongDown") {
+    // mehr Fokus auf tiefstes Level
+    parts[0] = Math.max(0, parts[0] - 0.05);
+    parts[3] += 0.05;
+  } else if (cpr.bias === "strongUp") {
+    // etwas mehr Fokus auf erste Crash-Stufe
+    parts[3] = Math.max(0, parts[3] - 0.05);
+    parts[0] += 0.05;
+  }
+}
+
 // Hauptlogik
 function recalculate() {
   const monthlyDca = parseFloat(document.getElementById("monthlyDca").value) || 0;
@@ -390,6 +577,9 @@ function recalculate() {
 
   saveSettings();
   lastRecommendedCrashBudget = null;
+
+  // CPR-Kontext holen (setzt auch cprInfo-Text)
+  const cpr = getCprContext(price);
 
   // 1) Markt-Zone bestimmen
   const zoneInfo = document.getElementById("zoneInfo");
@@ -428,9 +618,10 @@ function recalculate() {
   const tbodyLimit = document.querySelector("#limitTable tbody");
   tbodyLimit.innerHTML = "";
   let dcaLevels = [];
+  const limitHintEl = document.getElementById("limitHint");
+
   if (price > 0 && monthlyDca > 0 && zone !== "unknown") {
     if (zone === "deep") {
-      // 4 Limits: -3, -6, -10, -15 ; 25% jeweils
       dcaLevels = [
         { label: "-3 %",  drop: 0.03, part: 0.25 },
         { label: "-6 %",  drop: 0.06, part: 0.25 },
@@ -438,20 +629,21 @@ function recalculate() {
         { label: "-15 %", drop: 0.15, part: 0.25 }
       ];
     } else if (zone === "cheap") {
-      // etwas mehr Gewicht auf tieferen Levels
       dcaLevels = [
         { label: "-3 %",  drop: 0.03, part: 0.35 },
         { label: "-6 %",  drop: 0.06, part: 0.35 },
         { label: "-10 %", drop: 0.10, part: 0.30 }
       ];
     } else {
-      // normal: Standard-Verteilung 40/35/25
       dcaLevels = [
         { label: "-3 %",  drop: 0.03, part: 0.40 },
         { label: "-6 %",  drop: 0.06, part: 0.35 },
         { label: "-10 %", drop: 0.10, part: 0.25 }
       ];
     }
+
+    // CPR-Feintuning anwenden
+    adjustDcaPartsWithCpr(dcaLevels, cpr, zone);
 
     dcaLevels.forEach(l => {
       const limitPrice = price * (1 - l.drop);
@@ -469,9 +661,17 @@ function recalculate() {
     if (zone === "deep") {
       hint += "\nIn der Deep-Zone kommt das Extra-Limit bei −15 % dazu – hier platzierst du bewusst einen Teil sehr tief.";
     }
-    document.getElementById("limitHint").innerText = hint;
+    if (cpr.enabled && (cpr.bias === "strongDown" || cpr.bias === "strongUp")) {
+      hint += "\nCPR-Bias wurde zur Feinverteilung verwendet: ";
+      if (cpr.bias === "strongDown") {
+        hint += "etwas mehr Budget wurde in tiefere DCA-Stufen geschoben.";
+      } else {
+        hint += "etwas mehr Budget wurde in die oberen DCA-Stufen geschoben.";
+      }
+    }
+    limitHintEl.innerText = hint;
   } else {
-    document.getElementById("limitHint").innerText =
+    limitHintEl.innerText =
       "Bitte Monatsbudget, BTC-Preis und MA-Werte eintragen, um die Limit-Orders zu berechnen.";
   }
 
@@ -492,15 +692,15 @@ function recalculate() {
     ];
     let parts;
     if (zone === "deep") {
-      // Deep: aggressiver
       parts = [0.15, 0.20, 0.25, 0.40];
     } else if (zone === "cheap") {
-      // Günstig: ausgewogen
       parts = [0.10, 0.25, 0.25, 0.40];
-    } else { // normal
-      // Normal: eher vorsichtig
+    } else {
       parts = [0.05, 0.20, 0.30, 0.45];
     }
+
+    // CPR-Feintuning für Crash-Budget
+    adjustCrashPartsWithCpr(parts, cpr);
 
     baseLevels.forEach((lvl, idx) => {
       const part = parts[idx];
@@ -518,11 +718,19 @@ function recalculate() {
 
     let txt = "Diese Tabelle zeigt dir, wie du dein Crash-Budget auf −20 %, −30 %, −40 % und −50 % vom aktuellen Preis verteilen kannst.\n";
     if (zone === "deep") {
-      txt += "In der Deep-Zone ist der Einsatz aggressiver – hier holen Crash-Käufe historisch besonders viele Sats.";
+      txt += "In der Deep-Zone ist der Einsatz aggressiver – hier holen Crash-Käufe historisch besonders viele Sats.\n";
     } else if (zone === "cheap") {
-      txt += "In der günstigen Zone ist der Einsatz moderat – du nutzt Crash-Käufe, hältst aber Reserven für noch tiefere Phasen.";
+      txt += "In der günstigen Zone ist der Einsatz moderat – du nutzt Crash-Käufe, hältst aber Reserven für noch tiefere Phasen.\n";
     } else {
-      txt += "In der Normal-Zone ist die Verteilung konservativer – setze Crash-Budget nur bei echten, starken Rücksetzern ein.";
+      txt += "In der Normal-Zone ist die Verteilung konservativer – setze Crash-Budget nur bei echten, starken Rücksetzern ein.\n";
+    }
+    if (cpr.enabled && (cpr.bias === "strongDown" || cpr.bias === "strongUp")) {
+      txt += "CPR-Bias wurde auch hier für die Verteilung genutzt: ";
+      if (cpr.bias === "strongDown") {
+        txt += "etwas mehr Budget liegt auf den tiefsten Crash-Leveln.";
+      } else {
+        txt += "etwas mehr Budget liegt auf den ersten Crash-Stufen.";
+      }
     }
     crashHint.innerText = txt;
   }
@@ -659,6 +867,14 @@ function recalculate() {
     tips.push("DEEP-Zone: Das sind die Phasen, in denen langfristig die günstigsten Sats gekauft werden konnten. Nachkaufen tut mental weh, lohnt sich statistisch aber oft.");
   }
 
+  if (cpr.enabled) {
+    if (cpr.bias === "strongDown") {
+      tips.push("CPR/Pivot-Bias: Stark abwärtsorientiert. Tiefe DCA-Stufen und Crash-Level haben erhöhte Wahrscheinlichkeit, in den nächsten Tagen/Wochen getroffen zu werden.");
+    } else if (cpr.bias === "strongUp") {
+      tips.push("CPR/Pivot-Bias: Stark aufwärtsorientiert. Tiefste Crash-Level könnten länger unberührt bleiben – deine oberen DCA-Stufen sind aktuell wichtiger.");
+    }
+  }
+
   if (monthlyDca > 0) {
     if (day <= 5) {
       tips.push("Monatsanfang (Tag " + day + "): Jetzt DCA-Limits und Crash-Limits neu setzen und dann einfach laufen lassen.");
@@ -689,7 +905,9 @@ window.addEventListener("load", () => {
   loadSettings();
   recalculate();
 
-  ["monthlyDca","crashBudget","ma200","wma200","spentThisMonth","currentPrice"].forEach(id => {
+  ["monthlyDca","crashBudget","ma200","wma200","spentThisMonth","currentPrice",
+   "cprBC","cprPP","cprTC","cprS1","cprS2","cprS3","cprR1","cprR2","cprR3"
+  ].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener("input", recalculate);
   });
