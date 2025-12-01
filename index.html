@@ -184,7 +184,7 @@
 <body>
   <h1>₿ DCA & Crash-Assistent PRO</h1>
   <div class="subtitle">
-    Version 1.2 – DVCB-Strategie, Zonenlogik, Crash-Budget-Helfer & optionale CPR/Pivot-Feinsteuerung.
+    Version 1.3 – DVCB-Strategie, Zonenlogik, Crash-Budget-Helfer, CPR/Pivots & Bullrun-Mindestkauf.
   </div>
 
   <!-- 1. Basis-Einstellungen -->
@@ -279,6 +279,7 @@
     <p class="small">
       Trage ein, wie viel du in diesem Monat (DCA + eventuelle Market-Käufe) tatsächlich investiert hast.
       Die App zeigt dir, wie der Restbetrag je nach Zone zwischen Market-Kauf und Crash-Budget aufgeteilt werden kann.
+      Im Bullrun (Normal-Zone) und 0 € investiert: ca. 25 % Market-Kauf, Rest ins Crash-Budget.
     </p>
     <label>Tatsächlich investiert im Monat (€)
       <input type="number" id="spentThisMonth" value="0" step="10">
@@ -527,19 +528,15 @@ function adjustDcaPartsWithCpr(dcaLevels, cpr, zone) {
   if (!cpr.enabled) return;
 
   if (cpr.bias === "strongDown") {
-    // etwas mehr in die tieferen Stufen schieben
     if (dcaLevels.length === 3) {
-      // -3, -6, -10
       dcaLevels[0].part = Math.max(0, dcaLevels[0].part - 0.05);
       dcaLevels[2].part += 0.05;
     } else if (dcaLevels.length === 4) {
-      // -3, -6, -10, -15
       dcaLevels[0].part = Math.max(0, dcaLevels[0].part - 0.05);
       dcaLevels[2].part += 0.03;
       dcaLevels[3].part += 0.02;
     }
   } else if (cpr.bias === "strongUp") {
-    // etwas mehr in die oberen Stufen schieben
     if (dcaLevels.length === 3) {
       dcaLevels[0].part += 0.05;
       dcaLevels[2].part = Math.max(0, dcaLevels[2].part - 0.05);
@@ -556,11 +553,9 @@ function adjustCrashPartsWithCpr(parts, cpr) {
   if (!cpr.enabled) return;
 
   if (cpr.bias === "strongDown") {
-    // mehr Fokus auf tiefstes Level
     parts[0] = Math.max(0, parts[0] - 0.05);
     parts[3] += 0.05;
   } else if (cpr.bias === "strongUp") {
-    // etwas mehr Fokus auf erste Crash-Stufe
     parts[3] = Math.max(0, parts[3] - 0.05);
     parts[0] += 0.05;
   }
@@ -578,7 +573,6 @@ function recalculate() {
   saveSettings();
   lastRecommendedCrashBudget = null;
 
-  // CPR-Kontext holen (setzt auch cprInfo-Text)
   const cpr = getCprContext(price);
 
   // 1) Markt-Zone bestimmen
@@ -642,7 +636,6 @@ function recalculate() {
       ];
     }
 
-    // CPR-Feintuning anwenden
     adjustDcaPartsWithCpr(dcaLevels, cpr, zone);
 
     dcaLevels.forEach(l => {
@@ -699,7 +692,6 @@ function recalculate() {
       parts = [0.05, 0.20, 0.30, 0.45];
     }
 
-    // CPR-Feintuning für Crash-Budget
     adjustCrashPartsWithCpr(parts, cpr);
 
     baseLevels.forEach((lvl, idx) => {
@@ -735,25 +727,29 @@ function recalculate() {
     crashHint.innerText = txt;
   }
 
-  // 4) Restbudget-Manager
+  // 4) Restbudget-Manager (mit Bullrun-Option 2)
   const restHint = document.getElementById("restHint");
   if (monthlyDca <= 0) {
     restHint.innerText = "Trage zuerst dein monatliches DCA-Budget ein.";
   } else if (zone === "unknown" || price <= 0) {
     restHint.innerText = "Zone ist noch unbekannt. Bitte BTC-Preis, MA200 und 200WMA eintragen.";
-  } else if (spentThisMonth <= 0) {
-    restHint.innerText =
-      "Trage hier ein, wie viel du in diesem Monat (DCA + eventuelle Market-Käufe) wirklich investiert hast.\n" +
-      "Die App berechnet dann, wie du den Restbetrag je nach Zone zwischen Market-Kauf und Crash-Budget aufteilen kannst.";
   } else {
     let rest = monthlyDca - spentThisMonth;
     if (rest < 0) rest = 0;
+
     let restToCrash = 0;
     let restToMarketExtra = 0;
 
     if (zone === "normal") {
-      restToCrash = rest;
-      restToMarketExtra = 0;
+      if (spentThisMonth === 0) {
+        // Bullrun-Option 2: 25 % Market, 75 % Crash
+        restToMarketExtra = rest * 0.25;
+        restToCrash = rest - restToMarketExtra;
+      } else {
+        // klassische Variante: Rest komplett ins Crash-Budget
+        restToCrash = rest;
+        restToMarketExtra = 0;
+      }
     } else if (zone === "cheap") {
       restToCrash = rest * 0.5;
       restToMarketExtra = rest * 0.5;
@@ -771,11 +767,20 @@ function recalculate() {
       "Restbetrag: " + formatEuro(rest) + " €\n\n";
 
     if (zone === "normal") {
-      text +=
-        "Zone: NORMAL\n" +
-        "Empfehlung:\n" +
-        "• Restbetrag vollständig dem Crash-Budget zuführen.\n" +
-        "• Zusätzliche Market-Käufe sind hier nicht nötig.\n\n";
+      if (spentThisMonth === 0) {
+        text +=
+          "Zone: NORMAL (Bullenmarkt-Szenario)\n" +
+          "In diesem Monat scheint noch keine DCA-Order ausgelöst worden zu sein (eingetragen: 0 €).\n\n" +
+          "Empfehlung (Option 2 – Bullrun-Mindeskauf):\n" +
+          "• Ca. 25 % des Monatsbudgets jetzt einmalig als Market-Kauf nutzen.\n" +
+          "• Die übrigen ~75 % in dein Crash-Budget schieben.\n\n";
+      } else {
+        text +=
+          "Zone: NORMAL\n" +
+          "Empfehlung:\n" +
+          "• Restbetrag vollständig dem Crash-Budget zuführen.\n" +
+          "• Zusätzliche Market-Käufe sind hier nicht nötig.\n\n";
+      }
     } else if (zone === "cheap") {
       text +=
         "Zone: GÜNSTIG (unter MA200)\n" +
@@ -820,10 +825,10 @@ function recalculate() {
         "• Setze deine DCA-Limits bei −3 %, −6 % und −10 % gemäß Tabelle.\n" +
         "• Setze Crash-Limit-Orders bei −20 %, −30 %, −40 %, −50 % mit den vorgeschlagenen Beträgen.\n\n" +
         "Im Monatsverlauf:\n" +
-        "• Lass die Limits arbeiten. Crash-Limits greifen nur bei echten stärkeren Rückgängen.\n\n" +
+        "• Lass die Limits arbeiten. In starken Bullenphasen kann es sein, dass keine DCA-Limits getroffen werden.\n\n" +
         "Am Monatsende:\n" +
-        "• Trage ein, wie viel wirklich investiert wurde.\n" +
-        "• Den Restbetrag komplett ins Crash-Budget schieben (kein zusätzlicher Market-Kauf nötig).\n";
+        "• Wenn 0 € investiert wurden, nutzt du ca. 25 % deines Monatsbudgets als einmaligen Market-Kauf und schiebst den Rest ins Crash-Budget.\n" +
+        "• Wenn bereits etwas investiert wurde, geht der Restbetrag komplett ins Crash-Budget.\n";
     } else if (zone === "cheap") {
       action =
         "🟡 Zone: GÜNSTIG (unter MA200)\n\n" +
@@ -860,7 +865,7 @@ function recalculate() {
   const day = now.getDate();
 
   if (zone === "normal") {
-    tips.push("Du befindest dich in der NORMAL-Zone. Fokus: ruhiges DCA + Crash-Budget aufbauen, nicht übertreiben.");
+    tips.push("Du befindest dich in der NORMAL-Zone. Fokus: ruhiges DCA, Crash-Budget aufbauen und im Bullrun nicht hinterherjagen.");
   } else if (zone === "cheap") {
     tips.push("Du bist in einer GÜNSTIGEN Zone (unter MA200). Historisch lohnt sich hier konsequentes DCA.");
   } else if (zone === "deep") {
@@ -879,12 +884,12 @@ function recalculate() {
     if (day <= 5) {
       tips.push("Monatsanfang (Tag " + day + "): Jetzt DCA-Limits und Crash-Limits neu setzen und dann einfach laufen lassen.");
     } else if (day >= 25 && spentThisMonth < monthlyDca) {
-      tips.push("Monatsende nähert sich: Du hast noch nicht dein volles DCA-Budget eingesetzt. Schau dir den Restbudget-Manager an.");
+      if (zone === "normal" && spentThisMonth === 0) {
+        tips.push("Monatsende, NORMAL-Zone und 0 € investiert: Der Restbudget-Manager schlägt dir jetzt vor, ca. 25 % deines Budgets als einmaligen Market-Kauf zu nutzen und den Rest ins Crash-Budget zu legen.");
+      } else {
+        tips.push("Monatsende nähert sich: Du hast noch nicht dein volles DCA-Budget eingesetzt. Schau dir den Restbudget-Manager an.");
+      }
     }
-  }
-
-  if (spentThisMonth === 0 && monthlyDca > 0 && day > 5) {
-    tips.push("Du hast für diesen Monat noch keinen eingesetzten Betrag eingetragen. Prüfe deine Orders und aktualisiere den Wert, damit der Restbudget-Manager korrekt arbeiten kann.");
   }
 
   if (crashBudget > 0 && zone !== "deep") {
