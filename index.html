@@ -184,7 +184,7 @@
 <body>
   <h1>₿ DCA & Crash-Assistent PRO</h1>
   <div class="subtitle">
-    Version 1.0 – DVCB-Strategie, Zonenlogik & Crash-Budget-Helfer. Alle Daten bleiben in deinem Browser.
+    Version 1.1 – DVCB-Strategie, Zonenlogik & Crash-Budget-Helfer. Daten bleiben im Browser gespeichert.
   </div>
 
   <!-- 1. Basis-Einstellungen -->
@@ -192,6 +192,7 @@
     <h2>1. Basis-Einstellungen</h2>
     <p class="small">
       Monatsbudget = dein regelmäßiges DCA-Geld. Crash-Budget = Extra-Munition für echte Dumps (nur manuell befüllt).
+      MA200 & 200WMA trägst du z.B. aus TradingView (BTC/EUR) ein.
     </p>
     <label>Monatliches DCA-Budget (€)
       <input type="number" id="monthlyDca" value="310" step="1">
@@ -203,8 +204,8 @@
         </label>
       </div>
       <div>
-        <label>Aktueller BTC-Preis (€)
-          <input type="number" id="currentPrice" value="0" step="100" readonly>
+        <label>Aktueller BTC-Preis (€) <span class="small">(per Button oder manuell)</span>
+          <input type="number" id="currentPrice" value="0" step="100">
         </label>
       </div>
     </div>
@@ -222,7 +223,6 @@
     </div>
     <div class="actions-row">
       <button onclick="fetchLivePrice()">BTC-Preis laden</button>
-      <button onclick="fetchMAValues()" class="secondary">MA-Werte automatisch laden</button>
     </div>
   </div>
 
@@ -321,7 +321,8 @@ function saveSettings() {
     crashBudget: document.getElementById("crashBudget").value,
     ma200: document.getElementById("ma200").value,
     wma200: document.getElementById("wma200").value,
-    spentThisMonth: document.getElementById("spentThisMonth").value
+    spentThisMonth: document.getElementById("spentThisMonth").value,
+    currentPrice: document.getElementById("currentPrice").value
   };
   try {
     localStorage.setItem("btcDcaSettingsV2", JSON.stringify(settings));
@@ -338,6 +339,7 @@ function loadSettings() {
     if (s.ma200) document.getElementById("ma200").value = s.ma200;
     if (s.wma200) document.getElementById("wma200").value = s.wma200;
     if (s.spentThisMonth) document.getElementById("spentThisMonth").value = s.spentThisMonth;
+    if (s.currentPrice) document.getElementById("currentPrice").value = s.currentPrice;
   } catch (e) {}
 }
 
@@ -352,65 +354,9 @@ async function fetchLivePrice() {
     const price = data.bitcoin.eur;
     priceInput.value = Math.round(price);
   } catch (e) {
-    priceInput.value = 0;
     alert("BTC-Preis konnte nicht geladen werden:\n" + e.message + "\nDu kannst ihn manuell eintragen.");
+    priceInput.value = 0;
   }
-  recalculate();
-}
-
-// MA-Werte automatisch laden (aus BTC/EUR-Historie)
-async function fetchMAValues() {
-  const ma200Input = document.getElementById("ma200");
-  const wma200Input = document.getElementById("wma200");
-
-  try {
-    ma200Input.value = "…";
-    wma200Input.value = "…";
-
-    const res = await fetch("https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=eur&days=max&interval=daily");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-
-    if (!data.prices || !Array.isArray(data.prices) || data.prices.length < 200) {
-      throw new Error("Zu wenige Preisdaten für MA-Berechnung.");
-    }
-
-    const closes = data.prices.map(p => p[1]); // [timestamp, price]
-
-    // MA200 (200 Tage SMA)
-    let ma200 = 0;
-    if (closes.length >= 200) {
-      const last200 = closes.slice(-200);
-      const sum200 = last200.reduce((a, b) => a + b, 0);
-      ma200 = sum200 / last200.length;
-    } else {
-      const sumAll = closes.reduce((a, b) => a + b, 0);
-      ma200 = sumAll / closes.length;
-    }
-
-    // 200WMA (200 Wochen SMA) approximiert: jede 7. Kerze als Wochenclose
-    const weekly = [];
-    for (let i = closes.length - 1; i >= 0; i -= 7) {
-      weekly.unshift(closes[i]);
-    }
-
-    if (weekly.length < 200) {
-      throw new Error("Zu wenige Wochen-Daten für 200WMA.");
-    }
-
-    const last200Weeks = weekly.slice(-200);
-    const sumWeeks = last200Weeks.reduce((a, b) => a + b, 0);
-    const wma200 = sumWeeks / last200Weeks.length;
-
-    ma200Input.value = Math.round(ma200);
-    wma200Input.value = Math.round(wma200);
-
-  } catch (e) {
-    alert("MA-Werte konnten nicht automatisch geladen werden:\n" + e.message + "\nDu kannst sie manuell eintragen (z.B. aus TradingView).");
-    ma200Input.value = "";
-    wma200Input.value = "";
-  }
-
   recalculate();
 }
 
@@ -455,7 +401,7 @@ function recalculate() {
   zoneCard.classList.remove("zone-normal", "zone-cheap", "zone-deep");
 
   if (price <= 0 || ma200 <= 0 || wma200 <= 0) {
-    zoneText = "Bitte BTC-Preis, MA200 und 200WMA eintragen (oder per Button laden).";
+    zoneText = "Bitte BTC-Preis, MA200 und 200WMA eintragen (z.B. aus TradingView, BTC/EUR).";
     zoneBadge = "<span class='badge badge-grey'>unbekannt</span>";
     zone = "unknown";
   } else {
@@ -526,7 +472,7 @@ function recalculate() {
     document.getElementById("limitHint").innerText = hint;
   } else {
     document.getElementById("limitHint").innerText =
-      "Bitte Monatsbudget, BTC-Preis und MA-Werte eintragen (oder laden), um die Limit-Orders zu berechnen.";
+      "Bitte Monatsbudget, BTC-Preis und MA-Werte eintragen, um die Limit-Orders zu berechnen.";
   }
 
   // 3) Crash-Level-Plan (vom aktuellen Preis)
@@ -586,7 +532,7 @@ function recalculate() {
   if (monthlyDca <= 0) {
     restHint.innerText = "Trage zuerst dein monatliches DCA-Budget ein.";
   } else if (zone === "unknown" || price <= 0) {
-    restHint.innerText = "Zone ist noch unbekannt. Bitte BTC-Preis, MA200 und 200WMA eintragen (oder laden).";
+    restHint.innerText = "Zone ist noch unbekannt. Bitte BTC-Preis, MA200 und 200WMA eintragen.";
   } else if (spentThisMonth <= 0) {
     restHint.innerText =
       "Trage hier ein, wie viel du in diesem Monat (DCA + eventuelle Market-Käufe) wirklich investiert hast.\n" +
@@ -653,8 +599,8 @@ function recalculate() {
 
   if (price <= 0 || zone === "unknown") {
     action =
-      "1. Lade oder trage den BTC-Preis ein.\n" +
-      "2. Lade oder trage MA200 und 200WMA ein.\n" +
+      "1. Trage BTC-Preis ein (per Button laden oder manuell).\n" +
+      "2. Trage MA200 und 200WMA ein (z.B. aus TradingView, BTC/EUR).\n" +
       "3. Setze dann die DCA-Limits (−3 %, −6 %, −10 %, ggf. −15 %) gemäß Tabelle.\n" +
       "4. Wenn du ein Crash-Budget hast, nutze die Crash-Level-Tabelle als Plan.\n" +
       "5. Am Monatsende trägst du ein, wie viel du wirklich investiert hast – dann sagt dir der Restbudget-Manager, was mit dem Rest passieren soll.";
@@ -666,7 +612,7 @@ function recalculate() {
         "• Setze deine DCA-Limits bei −3 %, −6 % und −10 % gemäß Tabelle.\n" +
         "• Setze Crash-Limit-Orders bei −20 %, −30 %, −40 %, −50 % mit den vorgeschlagenen Beträgen.\n\n" +
         "Im Monatsverlauf:\n" +
-        "• Lass die Limits arbeiten. Crash-Limits greifen nur bei echten stärkerem Rückgang.\n\n" +
+        "• Lass die Limits arbeiten. Crash-Limits greifen nur bei echten stärkeren Rückgängen.\n\n" +
         "Am Monatsende:\n" +
         "• Trage ein, wie viel wirklich investiert wurde.\n" +
         "• Den Restbetrag komplett ins Crash-Budget schieben (kein zusätzlicher Market-Kauf nötig).\n";
@@ -710,7 +656,7 @@ function recalculate() {
   } else if (zone === "cheap") {
     tips.push("Du bist in einer GÜNSTIGEN Zone (unter MA200). Historisch lohnt sich hier konsequentes DCA.");
   } else if (zone === "deep") {
-    tips.push("DEEP-Zone: Das sind die Phasen, in denen langfristige Sats am billigsten waren. Mentale Vorbereitung: Nachkaufen tut weh, lohnt sich aber statistisch.");
+    tips.push("DEEP-Zone: Das sind die Phasen, in denen langfristig die günstigsten Sats gekauft werden konnten. Nachkaufen tut mental weh, lohnt sich statistisch aber oft.");
   }
 
   if (monthlyDca > 0) {
@@ -743,7 +689,7 @@ window.addEventListener("load", () => {
   loadSettings();
   recalculate();
 
-  ["monthlyDca","crashBudget","ma200","wma200","spentThisMonth"].forEach(id => {
+  ["monthlyDca","crashBudget","ma200","wma200","spentThisMonth","currentPrice"].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener("input", recalculate);
   });
